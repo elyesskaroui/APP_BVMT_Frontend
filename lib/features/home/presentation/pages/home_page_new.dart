@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shimmer/shimmer.dart';
+import 'package:intl/intl.dart';
 
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_dimens.dart';
-import '../../../../core/constants/app_shadows.dart';
 import '../../../../core/constants/app_typography.dart';
 import '../../../../core/cubits/market_status_cubit.dart';
 import '../../../../shared/data/bvmt_ticker_data.dart';
@@ -312,23 +313,25 @@ class HomePage extends StatelessWidget {
                 padding: const EdgeInsets.fromLTRB(16, 8, 16, 14),
                 child: Row(
                   children: [
-                    // Logo
+                    // Logo BVMT
                     Container(
-                      width: 40,
-                      height: 40,
+                      width: 42,
+                      height: 42,
                       decoration: BoxDecoration(
                         color: Colors.white,
-                        borderRadius: BorderRadius.circular(10),
-                        boxShadow: AppShadows.cardLight,
-                      ),
-                      child: Center(
-                        child: Text(
-                          'B',
-                          style: AppTypography.h2.copyWith(
-                            color: AppColors.primaryBlue,
-                            fontWeight: FontWeight.w900,
+                        borderRadius: BorderRadius.circular(12),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.15),
+                            blurRadius: 8,
+                            offset: const Offset(0, 2),
                           ),
-                        ),
+                        ],
+                      ),
+                      padding: const EdgeInsets.all(6),
+                      child: Image.asset(
+                        'assets/images/BVMT.png',
+                        fit: BoxFit.contain,
                       ),
                     ),
                     const SizedBox(width: 12),
@@ -352,19 +355,18 @@ class HomePage extends StatelessWidget {
                       ),
                     ),
 
-                    // Session badge — mis à jour automatiquement via MarketStatusCubit
-                    if (state != null)
-                      BlocBuilder<MarketStatusCubit, MarketStatusState>(
-                        builder: (context, marketStatus) {
-                          return Semantics(
-                            label:
-                                marketStatus.isOpen
-                                    ? 'Session de marché ouverte'
-                                    : 'Session de marché fermée',
-                            child: _buildSessionBadge(marketStatus.isOpen, marketStatus.statusText),
-                          );
-                        },
-                      ),
+                    // Session badge — always visible (MarketStatusCubit inits synchronously)
+                    BlocBuilder<MarketStatusCubit, MarketStatusState>(
+                      builder: (context, marketStatus) {
+                        return Semantics(
+                          label:
+                              marketStatus.isOpen
+                                  ? 'Session de marché ouverte'
+                                  : 'Session de marché fermée',
+                          child: _buildSessionBadge(marketStatus.isOpen, marketStatus.statusText),
+                        );
+                      },
+                    ),
                     const SizedBox(width: 8),
 
                     // Market Watch button — BVMT orange style
@@ -425,32 +427,33 @@ class HomePage extends StatelessWidget {
   }
 
   Widget _buildSessionBadge(bool open, String statusText) {
+    final dotColor = open ? AppColors.bullGreen : AppColors.bearRed;
+    final textColor = open ? AppColors.bullGreen : AppColors.white80;
+    final bgColor = open ? AppColors.bullGreen20 : AppColors.bearRed20;
+    final borderColor = open
+        ? AppColors.bullGreen.withValues(alpha: 0.5)
+        : AppColors.bearRed.withValues(alpha: 0.4);
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
       decoration: BoxDecoration(
-        color: open ? AppColors.bullGreen20 : AppColors.white10,
+        color: bgColor,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(
-          color:
-              open
-                  ? AppColors.bullGreen.withValues(alpha: 0.5)
-                  : AppColors.white25,
-        ),
+        border: Border.all(color: borderColor),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // Dot indicator + icon for daltonism accessibility
           Icon(
-            open ? Icons.circle : Icons.circle_outlined,
-            size: 8,
-            color: open ? AppColors.bullGreen : AppColors.warningYellow,
+            open ? Icons.lock_open_rounded : Icons.lock_rounded,
+            color: dotColor,
+            size: 14,
           ),
           const SizedBox(width: 5),
           Text(
             open ? 'Ouverte' : 'Fermée',
             style: AppTypography.labelSmall.copyWith(
-              color: open ? AppColors.bullGreen : AppColors.white80,
+              color: textColor,
               fontWeight: FontWeight.w700,
             ),
           ),
@@ -526,31 +529,77 @@ class HomePage extends StatelessWidget {
   // ── INDICES SECTION ──
   // ═══════════════════════════════════════════
   Widget _buildIndicesSection(BuildContext context, MarketSummaryLoaded state, double hPadding) {
+    final now = DateFormat('HH:mm').format(DateTime.now());
     return Container(
       color: Colors.white,
       padding: EdgeInsets.fromLTRB(hPadding, 4, hPadding, 16),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Expanded(
-            child: Semantics(
-              label:
-                  '${state.summary.tunindex.name}: ${state.summary.tunindex.formattedValue}, variation ${state.summary.tunindex.formattedChange}',
-              child: PremiumIndexCard(
-                index: state.summary.tunindex,
-                onTap: () => IndexChartPopup.show(context, state.summary.tunindex),
-              ),
+          // ── "Marché en temps réel" sub-header ──
+          Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: Row(
+              children: [
+                Container(
+                  width: 6,
+                  height: 6,
+                  decoration: const BoxDecoration(
+                    color: AppColors.bullGreen,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  'Marché en temps réel',
+                  style: AppTypography.labelMedium.copyWith(
+                    color: AppColors.textSecondary,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 12,
+                  ),
+                ),
+                const Spacer(),
+                Icon(
+                  Icons.access_time_rounded,
+                  size: 12,
+                  color: AppColors.textSecondary.withValues(alpha: 0.5),
+                ),
+                const SizedBox(width: 3),
+                Text(
+                  'Mis à jour à $now',
+                  style: AppTypography.labelSmall.copyWith(
+                    color: AppColors.textSecondary.withValues(alpha: 0.5),
+                    fontSize: 10,
+                  ),
+                ),
+              ],
             ),
           ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Semantics(
-              label:
-                  '${state.summary.tunindex20.name}: ${state.summary.tunindex20.formattedValue}, variation ${state.summary.tunindex20.formattedChange}',
-              child: PremiumIndexCard(
-                index: state.summary.tunindex20,
-                onTap: () => IndexChartPopup.show(context, state.summary.tunindex20),
+          // ── Index cards row — uniform 16px gap ──
+          Row(
+            children: [
+              Expanded(
+                child: Semantics(
+                  label:
+                      '${state.summary.tunindex.name}: ${state.summary.tunindex.formattedValue}, variation ${state.summary.tunindex.formattedChange}',
+                  child: PremiumIndexCard(
+                    index: state.summary.tunindex,
+                    onTap: () => IndexChartPopup.show(context, state.summary.tunindex),
+                  ),
+                ),
               ),
-            ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Semantics(
+                  label:
+                      '${state.summary.tunindex20.name}: ${state.summary.tunindex20.formattedValue}, variation ${state.summary.tunindex20.formattedChange}',
+                  child: PremiumIndexCard(
+                    index: state.summary.tunindex20,
+                    onTap: () => IndexChartPopup.show(context, state.summary.tunindex20),
+                  ),
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -564,52 +613,108 @@ class HomePage extends StatelessWidget {
   // ═══════════════════════════════════════════
   Widget _buildStatsGrid(MarketSummaryLoaded state, double hPadding) {
     final s = state.summary;
+    const dividerColor = Color(0xFF243B5E); // subtle internal divider
+
     return Padding(
-      padding: EdgeInsets.fromLTRB(hPadding, 8, hPadding, 12),
+      padding: EdgeInsets.fromLTRB(hPadding, 0, hPadding, 16),
       child: Column(
         children: [
-          Row(
-            children: [
-              Expanded(
-                child: _StatCard(
-                  icon: Icons.pie_chart_rounded,
-                  iconColor: AppColors.primaryBlue,
-                  label: 'Capitalisation',
-                  value: _compactNum(s.marketCap),
-                  unit: 'TND',
-                ),
+          // ── Thin separator between indices and stats ──
+          Container(
+            height: 1,
+            margin: const EdgeInsets.only(bottom: 16),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [
+                  Colors.transparent,
+                  AppColors.divider.withValues(alpha: 0.3),
+                  Colors.transparent,
+                ],
               ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _StatCard(
-                  icon: Icons.account_balance_wallet_rounded,
-                  iconColor: AppColors.accentOrange,
-                  label: 'Capitaux',
-                  value: _compactNum(s.totalCapitaux),
-                  unit: 'TND',
-                ),
-              ),
-            ],
+            ),
           ),
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              Expanded(
-                child: _StatCard(
-                  icon: Icons.swap_horiz_rounded,
-                  iconColor: const Color(0xFF8B5CF6),
-                  label: 'Transactions',
-                  value: _formatInt(s.totalTransactions),
-                ),
+          // ── Single unified container for all 4 stats ──
+          Container(
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [Color(0xFF1B2A4A), Color(0xFF0F1E36)],
               ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _HausseBaisseCard(
-                  hausses: s.nbHausses,
-                  baisses: s.nbBaisses,
-                ),
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(
+                color: Colors.white.withValues(alpha: 0.08),
+                width: 1,
               ),
-            ],
+              boxShadow: [
+                BoxShadow(
+                  color: const Color(0xFF0F1E36).withValues(alpha: 0.5),
+                  blurRadius: 20,
+                  offset: const Offset(0, 8),
+                ),
+              ],
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(18),
+              child: Column(
+                children: [
+                  // ── Top row ──
+                  IntrinsicHeight(
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Expanded(
+                          child: _StatCell(
+                            icon: Icons.pie_chart_rounded,
+                            iconColor: AppColors.primaryBlue,
+                            label: 'Capitalisation',
+                            value: _compactNum(s.marketCap),
+                            unit: 'TND',
+                          ),
+                        ),
+                        // Vertical divider
+                        Container(width: 1, color: dividerColor),
+                        Expanded(
+                          child: _StatCell(
+                            icon: Icons.account_balance_wallet_rounded,
+                            iconColor: AppColors.accentOrange,
+                            label: 'Capitaux',
+                            value: _compactNum(s.totalCapitaux),
+                            unit: 'TND',
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  // Horizontal divider
+                  Container(height: 1, color: dividerColor),
+                  // ── Bottom row ──
+                  IntrinsicHeight(
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Expanded(
+                          child: _StatCell(
+                            icon: Icons.swap_horiz_rounded,
+                            iconColor: const Color(0xFF8B5CF6),
+                            label: 'Transactions',
+                            value: _formatInt(s.totalTransactions),
+                          ),
+                        ),
+                        // Vertical divider
+                        Container(width: 1, color: dividerColor),
+                        Expanded(
+                          child: _HausseBaisseCell(
+                            hausses: s.nbHausses,
+                            baisses: s.nbBaisses,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ),
         ],
       ),
@@ -828,16 +933,16 @@ class HomePage extends StatelessWidget {
 }
 
 // ═══════════════════════════════════════════════
-// ── STAT CARD (premium glassmorphism) ──
+// ── STAT CELL (inside unified container — no own border/shadow) ──
 // ═══════════════════════════════════════════════
-class _StatCard extends StatelessWidget {
+class _StatCell extends StatelessWidget {
   final IconData icon;
   final Color iconColor;
   final String label;
   final String value;
   final String? unit;
 
-  const _StatCard({
+  const _StatCell({
     required this.icon,
     required this.iconColor,
     required this.label,
@@ -847,101 +952,124 @@ class _StatCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Split value into number and suffix (Md, M, K)
+    final parts = value.split(' ');
+    final numPart = parts.first;
+    final suffixPart = parts.length > 1 ? parts.last : null;
+
     return Semantics(
       label: '$label: $value ${unit ?? ''}',
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              const Color(0xFF1B2A4A),
-              const Color(0xFF0F1E36),
-            ],
-          ),
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(
-            color: Colors.white.withValues(alpha: 0.08),
-            width: 1,
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: const Color(0xFF0F1E36).withValues(alpha: 0.4),
-              blurRadius: 16,
-              offset: const Offset(0, 6),
-            ),
-          ],
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                // Icon with glow effect
-                Container(
-                  width: 38,
-                  height: 38,
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [
-                        iconColor.withValues(alpha: 0.25),
-                        iconColor.withValues(alpha: 0.10),
-                      ],
-                    ),
-                    borderRadius: BorderRadius.circular(12),
-                    boxShadow: [
-                      BoxShadow(
-                        color: iconColor.withValues(alpha: 0.3),
-                        blurRadius: 12,
-                        offset: const Offset(0, 3),
-                      ),
-                    ],
-                  ),
-                  child: Icon(icon, color: iconColor, size: 18),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    label,
-                    style: AppTypography.labelMedium.copyWith(
-                      color: Colors.white.withValues(alpha: 0.7),
-                      fontSize: 12,
+      child: Tooltip(
+        message: 'Voir détails $label',
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: () => HapticFeedback.lightImpact(),
+            splashColor: iconColor.withValues(alpha: 0.15),
+            highlightColor: iconColor.withValues(alpha: 0.05),
+            child: SizedBox(
+              height: 110,
+              child: Stack(
+                children: [
+                  // ── Background icon (large, subtle) ──
+                  Positioned(
+                    right: -8,
+                    bottom: -8,
+                    child: Icon(
+                      icon,
+                      size: 72,
+                      color: iconColor.withValues(alpha: 0.07),
                     ),
                   ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 14),
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                Text(
-                  value,
-                  style: AppTypography.stockPrice.copyWith(
-                    color: Colors.white,
-                    fontSize: 22,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                if (unit != null) ...[
-                  const SizedBox(width: 5),
+                  // ── Content ──
                   Padding(
-                    padding: const EdgeInsets.only(bottom: 3),
-                    child: Text(
-                      unit!,
-                      style: AppTypography.labelSmall.copyWith(
-                        color: Colors.white.withValues(alpha: 0.45),
-                        fontSize: 12,
-                      ),
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // ── Top: small icon + label ──
+                        Row(
+                          children: [
+                            Container(
+                              width: 28,
+                              height: 28,
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(
+                                  begin: Alignment.topLeft,
+                                  end: Alignment.bottomRight,
+                                  colors: [
+                                    iconColor.withValues(alpha: 0.3),
+                                    iconColor.withValues(alpha: 0.12),
+                                  ],
+                                ),
+                                borderRadius: BorderRadius.circular(9),
+                              ),
+                              child: Icon(icon, color: iconColor, size: 14),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                label,
+                                style: AppTypography.labelMedium.copyWith(
+                                  color: Colors.white.withValues(alpha: 0.75),
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const Spacer(),
+                        // ── Value + suffix + unit ──
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.baseline,
+                          textBaseline: TextBaseline.alphabetic,
+                          children: [
+                            Flexible(
+                              child: Text(
+                                numPart,
+                                style: AppTypography.stockPrice.copyWith(
+                                  color: Colors.white,
+                                  fontSize: 26,
+                                  fontWeight: FontWeight.w800,
+                                  height: 1.1,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            if (suffixPart != null) ...[
+                              const SizedBox(width: 5),
+                              Text(
+                                suffixPart,
+                                style: AppTypography.labelMedium.copyWith(
+                                  color: Colors.white.withValues(alpha: 0.50),
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
+                            if (unit != null) ...[
+                              const SizedBox(width: 4),
+                              Text(
+                                unit!,
+                                style: AppTypography.labelSmall.copyWith(
+                                  color: Colors.white.withValues(alpha: 0.30),
+                                  fontSize: 11,
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ],
                     ),
                   ),
                 ],
-              ],
+              ),
             ),
-          ],
+          ),
         ),
       ),
     );
@@ -949,13 +1077,17 @@ class _StatCard extends StatelessWidget {
 }
 
 // ═══════════════════════════════════════════════
-// ── HAUSSE/BAISSE CARD — premium with progress bar ──
+// ── HAUSSE/BAISSE CELL — inside unified container ──
 // ═══════════════════════════════════════════════
-class _HausseBaisseCard extends StatelessWidget {
+class _HausseBaisseCell extends StatelessWidget {
   final int hausses;
   final int baisses;
 
-  const _HausseBaisseCard({required this.hausses, required this.baisses});
+  // Accessible colors (daltonism-friendly)
+  static const _haussColor = Color(0xFF00BFA5); // teal-green
+  static const _baisseColor = Color(0xFFFF6D00); // orange-red
+
+  const _HausseBaisseCell({required this.hausses, required this.baisses});
 
   @override
   Widget build(BuildContext context) {
@@ -964,121 +1096,154 @@ class _HausseBaisseCard extends StatelessWidget {
 
     return Semantics(
       label: '$hausses hausses, $baisses baisses',
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              const Color(0xFF1B2A4A),
-              const Color(0xFF0F1E36),
-            ],
-          ),
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(
-            color: Colors.white.withValues(alpha: 0.08),
-            width: 1,
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: const Color(0xFF0F1E36).withValues(alpha: 0.4),
-              blurRadius: 16,
-              offset: const Offset(0, 6),
-            ),
-          ],
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Hausses / Baisses',
-              style: AppTypography.labelMedium.copyWith(
-                color: Colors.white.withValues(alpha: 0.7),
-                fontSize: 12,
-              ),
-            ),
-            const SizedBox(height: 12),
-
-            // Progress bar
-            ClipRRect(
-              borderRadius: BorderRadius.circular(4),
-              child: SizedBox(
-                height: 6,
-                child: Row(
-                  children: [
-                    Flexible(
-                      flex: (ratio * 100).round(),
-                      child: Container(
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            colors: [
-                              AppColors.bullGreen,
-                              AppColors.bullGreen.withValues(alpha: 0.7),
-                            ],
+      child: Tooltip(
+        message: 'Ratio titres en hausse vs en baisse',
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: () => HapticFeedback.lightImpact(),
+            splashColor: Colors.white.withValues(alpha: 0.08),
+            child: SizedBox(
+              height: 110,
+              child: Stack(
+                children: [
+                  // ── Background icon ──
+                  Positioned(
+                    right: -6,
+                    bottom: -6,
+                    child: Icon(
+                      Icons.swap_vert_rounded,
+                      size: 72,
+                      color: Colors.white.withValues(alpha: 0.04),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // ── Label ──
+                        Text(
+                          'Hausses / Baisses',
+                          style: AppTypography.labelMedium.copyWith(
+                            color: Colors.white.withValues(alpha: 0.75),
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
                           ),
                         ),
-                      ),
-                    ),
-                    const SizedBox(width: 2),
-                    Flexible(
-                      flex: ((1 - ratio) * 100).round(),
-                      child: Container(
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            colors: [
-                              AppColors.bearRed.withValues(alpha: 0.7),
-                              AppColors.bearRed,
-                            ],
+                        const Spacer(),
+
+                        // ── Progress bar with pattern ──
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(4),
+                          child: SizedBox(
+                            height: 8,
+                            child: Row(
+                              children: [
+                                Flexible(
+                                  flex: (ratio * 100).round(),
+                                  child: Container(
+                                    decoration: const BoxDecoration(
+                                      gradient: LinearGradient(
+                                        colors: [
+                                          _haussColor,
+                                          Color(0xFF00897B),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 3),
+                                Flexible(
+                                  flex: ((1 - ratio) * 100).round(),
+                                  child: CustomPaint(
+                                    painter: _HatchedBarPainter(
+                                      baseColor: _baisseColor,
+                                    ),
+                                    child: Container(),
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
                         ),
-                      ),
+                        const SizedBox(height: 10),
+
+                        // ── Counts with ▲/▼ ──
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(Icons.arrow_drop_up_rounded,
+                                    color: _haussColor, size: 24),
+                                Text(
+                                  '$hausses',
+                                  style: const TextStyle(
+                                    color: _haussColor,
+                                    fontWeight: FontWeight.w800,
+                                    fontSize: 18,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(Icons.arrow_drop_down_rounded,
+                                    color: _baisseColor, size: 24),
+                                Text(
+                                  '$baisses',
+                                  style: const TextStyle(
+                                    color: _baisseColor,
+                                    fontWeight: FontWeight.w800,
+                                    fontSize: 18,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ],
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
             ),
-            const SizedBox(height: 10),
-
-            // Counts
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Row(
-                  children: [
-                    Icon(Icons.trending_up_rounded,
-                        color: AppColors.bullGreen, size: 16),
-                    const SizedBox(width: 4),
-                    Text(
-                      '$hausses',
-                      style: TextStyle(
-                        color: AppColors.bullGreen,
-                        fontWeight: FontWeight.w700,
-                        fontSize: 16,
-                      ),
-                    ),
-                  ],
-                ),
-                Row(
-                  children: [
-                    Icon(Icons.trending_down_rounded,
-                        color: AppColors.bearRed, size: 16),
-                    const SizedBox(width: 4),
-                    Text(
-                      '$baisses',
-                      style: TextStyle(
-                        color: AppColors.bearRed,
-                        fontWeight: FontWeight.w700,
-                        fontSize: 16,
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ],
+          ),
         ),
       ),
     );
   }
+}
+
+/// Painter for hatched bar pattern (accessibility — distinguish from solid bar)
+class _HatchedBarPainter extends CustomPainter {
+  final Color baseColor;
+  _HatchedBarPainter({required this.baseColor});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    // Base fill
+    canvas.drawRect(
+      Offset.zero & size,
+      Paint()..color = baseColor,
+    );
+    // Diagonal hatches
+    final hatchPaint = Paint()
+      ..color = Colors.white.withValues(alpha: 0.25)
+      ..strokeWidth = 1.5
+      ..style = PaintingStyle.stroke;
+    for (double x = -size.height; x < size.width + size.height; x += 5) {
+      canvas.drawLine(
+        Offset(x, size.height),
+        Offset(x + size.height, 0),
+        hatchPaint,
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }

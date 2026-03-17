@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+import 'dart:ui' as ui;
 import 'dart:ui';
 
 import 'package:fl_chart/fl_chart.dart';
@@ -84,6 +85,7 @@ class _IndexChartPopupState extends State<IndexChartPopup>
   // ── Animation controllers ──
   late final AnimationController _chartRevealController;
   late final AnimationController _pulseController;
+  late final AnimationController _travelController;
   late final Animation<double> _chartReveal;
   late final Animation<double> _pulse;
 
@@ -114,6 +116,12 @@ class _IndexChartPopupState extends State<IndexChartPopup>
       CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
     );
 
+    // Traveling light that glides along the chart line
+    _travelController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 3000),
+    )..repeat();
+
     // If BLoC already emitted data (from cache) before listener was attached,
     // start the reveal animation on the next frame.
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -129,6 +137,7 @@ class _IndexChartPopupState extends State<IndexChartPopup>
   void dispose() {
     _chartRevealController.dispose();
     _pulseController.dispose();
+    _travelController.dispose();
     super.dispose();
   }
 
@@ -597,6 +606,26 @@ class _IndexChartPopupState extends State<IndexChartPopup>
             ),
           ),
 
+          // ── Traveling light shimmer on line ──
+          Positioned.fill(
+            child: IgnorePointer(
+              child: AnimatedBuilder(
+                animation: _travelController,
+                builder: (context, _) {
+                  return CustomPaint(
+                    painter: _TravelingLightPainter(
+                      spots: spots,
+                      minY: minY,
+                      maxY: maxY,
+                      color: lineColor,
+                      progress: _travelController.value,
+                    ),
+                  );
+                },
+              ),
+            ),
+          ),
+
           // ── Main fl_chart ──
           LineChart(
             LineChartData(
@@ -1056,6 +1085,179 @@ class _ChartRevealClipper extends CustomClipper<Rect> {
   @override
   bool shouldReclip(covariant _ChartRevealClipper oldClipper) {
     return oldClipper.revealFraction != revealFraction;
+  }
+}
+
+/// Premium comet animation — glides along the chart line with trail & sparkles
+class _TravelingLightPainter extends CustomPainter {
+  final List<FlSpot> spots;
+  final double minY;
+  final double maxY;
+  final Color color;
+  final double progress; // 0.0 → 1.0
+
+  _TravelingLightPainter({
+    required this.spots,
+    required this.minY,
+    required this.maxY,
+    required this.color,
+    required this.progress,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (spots.length < 2) return;
+
+    final xMin = spots.first.x;
+    final xMax = spots.last.x;
+    final xRange = xMax - xMin;
+    if (xRange == 0) return;
+    final yRange = maxY - minY;
+    if (yRange == 0) return;
+
+    // Build path
+    final path = Path();
+    for (var i = 0; i < spots.length; i++) {
+      final x = (spots[i].x - xMin) / xRange * size.width;
+      final y = size.height - ((spots[i].y - minY) / yRange * size.height);
+      if (i == 0) {
+        path.moveTo(x, y);
+      } else {
+        path.lineTo(x, y);
+      }
+    }
+
+    final metrics = path.computeMetrics().toList();
+    if (metrics.isEmpty) return;
+    final metric = metrics.first;
+    final totalLen = metric.length;
+
+    final tangent = metric.getTangentForOffset(totalLen * progress);
+    if (tangent == null) return;
+    final point = tangent.position;
+
+    // Pulse factor for breathing effect
+    final pulse = 0.85 + 0.15 * math.sin(progress * math.pi * 12);
+
+    // ── 1) Long gradient trail (20% of path) ──
+    final trailLen = totalLen * 0.20;
+    final trailStart = (totalLen * progress - trailLen).clamp(0.0, totalLen);
+    final trailEnd = (totalLen * progress).clamp(0.0, totalLen);
+    if (trailEnd > trailStart) {
+      final trailPath = metric.extractPath(trailStart, trailEnd);
+      // Wide soft trail
+      canvas.drawPath(
+        trailPath,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 8
+          ..strokeCap = StrokeCap.round
+          ..shader = ui.Gradient.linear(
+            point,
+            Offset(
+              point.dx - tangent.vector.dx * trailLen * 0.3,
+              point.dy - tangent.vector.dy * trailLen * 0.3,
+            ),
+            [
+              color.withValues(alpha: 0.3 * pulse),
+              color.withValues(alpha: 0.0),
+            ],
+          )
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6),
+      );
+      // Thin bright core trail
+      canvas.drawPath(
+        trailPath,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 3
+          ..strokeCap = StrokeCap.round
+          ..shader = ui.Gradient.linear(
+            point,
+            Offset(
+              point.dx - tangent.vector.dx * trailLen * 0.3,
+              point.dy - tangent.vector.dy * trailLen * 0.3,
+            ),
+            [
+              Colors.white.withValues(alpha: 0.6 * pulse),
+              color.withValues(alpha: 0.0),
+            ],
+          ),
+      );
+    }
+
+    // ── 2) Large outer halo with radial gradient ──
+    canvas.drawCircle(
+      point,
+      32 * pulse,
+      Paint()
+        ..shader = ui.Gradient.radial(
+          point,
+          32 * pulse,
+          [
+            color.withValues(alpha: 0.2 * pulse),
+            color.withValues(alpha: 0.05),
+            color.withValues(alpha: 0.0),
+          ],
+          [0.0, 0.5, 1.0],
+        ),
+    );
+
+    // ── 3) Medium glow ring ──
+    canvas.drawCircle(
+      point,
+      14 * pulse,
+      Paint()
+        ..shader = ui.Gradient.radial(
+          point,
+          14 * pulse,
+          [
+            color.withValues(alpha: 0.5 * pulse),
+            color.withValues(alpha: 0.15),
+            color.withValues(alpha: 0.0),
+          ],
+          [0.0, 0.5, 1.0],
+        ),
+    );
+
+    // ── 4) White hot center ──
+    canvas.drawCircle(
+      point,
+      4.5 * pulse,
+      Paint()
+        ..color = Colors.white.withValues(alpha: 0.95)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2),
+    );
+    canvas.drawCircle(
+      point,
+      2.5,
+      Paint()..color = Colors.white,
+    );
+
+    // ── 5) Sparkle particles around the dot ──
+    final rng = math.Random((progress * 10000).toInt());
+    for (int i = 0; i < 5; i++) {
+      final angle = rng.nextDouble() * math.pi * 2;
+      final dist = 8.0 + rng.nextDouble() * 16;
+      final sparkleAlpha = (0.3 + rng.nextDouble() * 0.4) * pulse;
+      final sparkleSize = 1.0 + rng.nextDouble() * 1.5;
+      final sp = Offset(
+        point.dx + math.cos(angle) * dist,
+        point.dy + math.sin(angle) * dist,
+      );
+      canvas.drawCircle(
+        sp,
+        sparkleSize,
+        Paint()
+          ..color = Colors.white.withValues(alpha: sparkleAlpha)
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 1),
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _TravelingLightPainter old) {
+    return old.progress != progress;
   }
 }
 

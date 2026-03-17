@@ -16,9 +16,13 @@ import '../../../indices/presentation/bloc/indices_state.dart';
 import '../bloc/instrument_bloc.dart';
 import '../bloc/instrument_event.dart';
 import '../bloc/instrument_state.dart';
+import '../bloc/historique_bloc.dart';
+import '../bloc/historique_event.dart';
+import '../bloc/historique_state.dart';
 import '../bloc/market_watch_bloc.dart';
 import '../bloc/market_watch_event.dart';
 import '../bloc/market_watch_state.dart';
+import '../widgets/mw_historique_content.dart';
 import '../widgets/mw_index_chart_card.dart';
 import '../widgets/mw_indices_full_content.dart';
 import '../widgets/mw_instruments_content.dart';
@@ -57,17 +61,26 @@ class _MarketWatchPageState extends State<MarketWatchPage>
   // InstrumentBloc (créé localement pour le sous-onglet Instruments)
   late final InstrumentBloc _instrumentBloc;
 
+  // HistoriqueBloc (créé localement pour l'onglet Historique)
+  late final HistoriqueBloc _historiqueBloc;
+
   @override
   void initState() {
     super.initState();
     _indicesBloc = sl<IndicesBloc>();
     _instrumentBloc = sl<InstrumentBloc>();
+    _historiqueBloc = sl<HistoriqueBloc>();
     _mainTabController = TabController(length: 2, vsync: this);
     _mainTabController.addListener(() {
       if (!_mainTabController.indexIsChanging) {
         context.read<MarketWatchBloc>().add(
               MarketWatchMainTabChanged(_mainTabController.index),
             );
+        // Lazy-load historique data when switching to Historique tab
+        if (_mainTabController.index == 1 &&
+            _historiqueBloc.state is HistoriqueInitial) {
+          _historiqueBloc.add(const HistoriqueLoadRequested());
+        }
       }
     });
     // Tick the "il y a Xs" label every second
@@ -84,6 +97,7 @@ class _MarketWatchPageState extends State<MarketWatchPage>
     _timestampTimer?.cancel();
     _indicesBloc.close();
     _instrumentBloc.close();
+    _historiqueBloc.close();
     super.dispose();
   }
 
@@ -108,6 +122,7 @@ class _MarketWatchPageState extends State<MarketWatchPage>
       providers: [
         BlocProvider<IndicesBloc>.value(value: _indicesBloc),
         BlocProvider<InstrumentBloc>.value(value: _instrumentBloc),
+        BlocProvider<HistoriqueBloc>.value(value: _historiqueBloc),
       ],
       child: BlocBuilder<MarketWatchBloc, MarketWatchState>(
         builder: (context, state) {
@@ -239,31 +254,41 @@ class _MarketWatchPageState extends State<MarketWatchPage>
             if (_isSearchOpen)
               SliverToBoxAdapter(child: _buildSearchBar()),
 
-            // Market Summary Banner
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.only(top: 16),
-                child: MwMarketSummaryBanner(summary: state.summary),
+            // Market Summary Banner (Live only)
+            if (state.mainTabIndex == 0)
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.only(top: 16),
+                  child: MwMarketSummaryBanner(summary: state.summary),
+                ),
               ),
-            ),
 
-            // Timestamp
-            SliverToBoxAdapter(
-              child: _buildTimestamp(state),
-            ),
+            // Timestamp (Live only)
+            if (state.mainTabIndex == 0)
+              SliverToBoxAdapter(
+                child: _buildTimestamp(state),
+              ),
 
             // Main tab bar (Live / Historique)
             SliverToBoxAdapter(
               child: _buildMainTabBar(),
             ),
 
-            // Sub tab bar (Résumé du Marché / Tout / Marché / Indices)
-            SliverToBoxAdapter(
-              child: _buildSubTabs(state),
-            ),
+            // ── Live tab content ──
+            if (state.mainTabIndex == 0) ...[
+              // Sub tab bar (Résumé du Marché / Instruments / Indices)
+              SliverToBoxAdapter(
+                child: _buildSubTabs(state),
+              ),
+              // Contenu selon le sous-onglet sélectionné
+              ..._buildContentForSubTab(state, hPadding),
+            ],
 
-            // Contenu selon le sous-onglet sélectionné
-            ..._buildContentForSubTab(state, hPadding),
+            // ── Historique tab content ──
+            if (state.mainTabIndex == 1)
+              SliverToBoxAdapter(
+                child: MwHistoriqueContent(),
+              ),
 
             // Bottom spacing
             const SliverToBoxAdapter(child: SizedBox(height: 32)),

@@ -133,21 +133,23 @@ class _DetailChartTabState extends State<DetailChartTab>
                   // ── Flash lumineux sur la courbe ──
                   if (!_isLoading)
                     Positioned.fill(
-                      child: AnimatedBuilder(
-                        animation: _flashCtrl,
-                        builder: (context, _) {
-                          return CustomPaint(
-                            painter: _CurveFlashPainter(
-                              data: _activeData,
-                              progress: _flashCtrl.value,
-                              color: chartColor,
-                              leftPadding: 48,
-                              topPadding: 16,
-                              bottomPadding: 8,
-                              rightPadding: 0,
-                            ),
-                          );
-                        },
+                      child: IgnorePointer(
+                        child: AnimatedBuilder(
+                          animation: _flashCtrl,
+                          builder: (context, _) {
+                            return CustomPaint(
+                              painter: _CurveFlashPainter(
+                                data: _activeData,
+                                progress: _flashCtrl.value,
+                                color: chartColor,
+                                leftPadding: 48,
+                                topPadding: 0,
+                                bottomPadding: 0,
+                                rightPadding: 0,
+                              ),
+                            );
+                          },
+                        ),
                       ),
                     ),
                   // Loading overlay
@@ -729,8 +731,7 @@ class _StatCard {
 }
 
 // ==========================================================================
-// _CurveFlashPainter — Dessine un flash lumineux qui se déplace le long
-// de la courbe. Le point lumineux glisse de gauche à droite en boucle.
+// _CurveFlashPainter — Premium comet with trail & sparkles
 // ==========================================================================
 class _CurveFlashPainter extends CustomPainter {
   final List<double> data;
@@ -764,7 +765,7 @@ class _CurveFlashPainter extends CustomPainter {
     final rangeY = maxY - minY;
     if (rangeY <= 0) return;
 
-    // Construire les points de la courbe (miroir de fl_chart)
+    // Build points
     final points = <Offset>[];
     for (int i = 0; i < data.length; i++) {
       final x = leftPadding + (i / (data.length - 1)) * chartWidth;
@@ -772,104 +773,144 @@ class _CurveFlashPainter extends CustomPainter {
       points.add(Offset(x, y));
     }
 
-    // Calculer la position du flash le long de la courbe
-    // Utiliser le path length pour un mouvement régulier
+    // Smooth cubic bezier path
     final path = Path();
     path.moveTo(points.first.dx, points.first.dy);
-
-    // Courbe lissée via cubic bezier (comme fl_chart curveSmoothness 0.3)
     for (int i = 0; i < points.length - 1; i++) {
       final p0 = i > 0 ? points[i - 1] : points[i];
       final p1 = points[i];
       final p2 = points[i + 1];
       final p3 = i + 2 < points.length ? points[i + 2] : points[i + 1];
-
-      final smoothness = 0.3;
+      const smoothness = 0.3;
       final cp1x = p1.dx + (p2.dx - p0.dx) * smoothness;
       final cp1y = p1.dy + (p2.dy - p0.dy) * smoothness;
       final cp2x = p2.dx - (p3.dx - p1.dx) * smoothness;
       final cp2y = p2.dy - (p3.dy - p1.dy) * smoothness;
-
       path.cubicTo(cp1x, cp1y, cp2x, cp2y, p2.dx, p2.dy);
     }
 
-    // Mesurer le path et trouver la position du flash
     final pathMetrics = path.computeMetrics().toList();
     if (pathMetrics.isEmpty) return;
+    final metric = pathMetrics.first;
+    final totalLen = metric.length;
+    final flashPos = progress * totalLen;
 
-    final totalLength = pathMetrics.first.length;
-    final flashPos = progress * totalLength;
-
-    // Point principal du flash
-    final tangent = pathMetrics.first.getTangentForOffset(flashPos);
+    final tangent = metric.getTangentForOffset(flashPos);
     if (tangent == null) return;
+    final fp = tangent.position;
 
-    final flashPoint = tangent.position;
+    // Breathing pulse
+    final pulse = 0.85 + 0.15 * math.sin(progress * math.pi * 12);
 
-    // ── Dessiner le flash (glow + point brillant) ──
-
-    // 1) Grand halo diffus
-    final haloPaint = Paint()
-      ..shader = ui.Gradient.radial(
-        flashPoint,
-        30,
-        [
-          color.withValues(alpha: 0.25),
-          color.withValues(alpha: 0.08),
-          color.withValues(alpha: 0.0),
-        ],
-        [0.0, 0.5, 1.0],
+    // ── 1) Long gradient trail (20%) ──
+    final trailLen = totalLen * 0.20;
+    final trailStart = (flashPos - trailLen).clamp(0.0, totalLen);
+    if (flashPos > trailStart) {
+      final trailPath = metric.extractPath(trailStart, flashPos);
+      // Wide soft trail
+      canvas.drawPath(
+        trailPath,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 8
+          ..strokeCap = StrokeCap.round
+          ..shader = ui.Gradient.linear(
+            fp,
+            Offset(
+              fp.dx - tangent.vector.dx * trailLen * 0.3,
+              fp.dy - tangent.vector.dy * trailLen * 0.3,
+            ),
+            [
+              color.withValues(alpha: 0.3 * pulse),
+              color.withValues(alpha: 0.0),
+            ],
+          )
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6),
       );
-    canvas.drawCircle(flashPoint, 30, haloPaint);
-
-    // 2) Halo moyen
-    final glowPaint = Paint()
-      ..shader = ui.Gradient.radial(
-        flashPoint,
-        14,
-        [
-          color.withValues(alpha: 0.5),
-          color.withValues(alpha: 0.15),
-          color.withValues(alpha: 0.0),
-        ],
-        [0.0, 0.5, 1.0],
+      // Thin bright core trail
+      canvas.drawPath(
+        trailPath,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 3
+          ..strokeCap = StrokeCap.round
+          ..shader = ui.Gradient.linear(
+            fp,
+            Offset(
+              fp.dx - tangent.vector.dx * trailLen * 0.3,
+              fp.dy - tangent.vector.dy * trailLen * 0.3,
+            ),
+            [
+              Colors.white.withValues(alpha: 0.6 * pulse),
+              color.withValues(alpha: 0.0),
+            ],
+          ),
       );
-    canvas.drawCircle(flashPoint, 14, glowPaint);
+    }
 
-    // 3) Point central blanc brillant
-    final corePaint = Paint()
-      ..color = Colors.white.withValues(alpha: 0.9)
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2);
-    canvas.drawCircle(flashPoint, 3.5, corePaint);
+    // ── 2) Large outer halo ──
+    canvas.drawCircle(
+      fp,
+      32 * pulse,
+      Paint()
+        ..shader = ui.Gradient.radial(
+          fp,
+          32 * pulse,
+          [
+            color.withValues(alpha: 0.2 * pulse),
+            color.withValues(alpha: 0.05),
+            color.withValues(alpha: 0.0),
+          ],
+          [0.0, 0.5, 1.0],
+        ),
+    );
 
-    // 4) Point coloré au centre
-    final centerPaint = Paint()..color = color;
-    canvas.drawCircle(flashPoint, 2, centerPaint);
+    // ── 3) Medium glow ring ──
+    canvas.drawCircle(
+      fp,
+      14 * pulse,
+      Paint()
+        ..shader = ui.Gradient.radial(
+          fp,
+          14 * pulse,
+          [
+            color.withValues(alpha: 0.5 * pulse),
+            color.withValues(alpha: 0.15),
+            color.withValues(alpha: 0.0),
+          ],
+          [0.0, 0.5, 1.0],
+        ),
+    );
 
-    // 5) Traînée derrière le flash (trail effect)
-    final trailLength = totalLength * 0.12; // 12% du path
-    final trailStart = (flashPos - trailLength).clamp(0.0, totalLength);
-    final trailPath =
-        pathMetrics.first.extractPath(trailStart, flashPos);
+    // ── 4) White hot center ──
+    canvas.drawCircle(
+      fp,
+      4.5 * pulse,
+      Paint()
+        ..color = Colors.white.withValues(alpha: 0.95)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2),
+    );
+    canvas.drawCircle(fp, 2.5, Paint()..color = Colors.white);
 
-    final trailPaint = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 3.5
-      ..strokeCap = StrokeCap.round
-      ..shader = ui.Gradient.linear(
-        tangent.position,
-        _getPointOnPath(pathMetrics.first, trailStart) ?? flashPoint,
-        [
-          color.withValues(alpha: 0.5),
-          color.withValues(alpha: 0.0),
-        ],
+    // ── 5) Sparkle particles ──
+    final rng = math.Random((progress * 10000).toInt());
+    for (int i = 0; i < 5; i++) {
+      final angle = rng.nextDouble() * math.pi * 2;
+      final dist = 8.0 + rng.nextDouble() * 16;
+      final sparkleAlpha = (0.3 + rng.nextDouble() * 0.4) * pulse;
+      final sparkleSize = 1.0 + rng.nextDouble() * 1.5;
+      final sp = Offset(
+        fp.dx + math.cos(angle) * dist,
+        fp.dy + math.sin(angle) * dist,
       );
-    canvas.drawPath(trailPath, trailPaint);
-  }
-
-  Offset? _getPointOnPath(ui.PathMetric metric, double offset) {
-    final t = metric.getTangentForOffset(offset);
-    return t?.position;
+      canvas.drawCircle(
+        sp,
+        sparkleSize,
+        Paint()
+          ..color = Colors.white.withValues(alpha: sparkleAlpha)
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 1),
+      );
+    }
   }
 
   @override

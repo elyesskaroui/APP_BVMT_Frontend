@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+import 'dart:ui' as ui;
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -10,10 +12,35 @@ import '../bloc/stock_detail_event.dart';
 import '../bloc/stock_detail_state.dart';
 
 /// Page détail d'une action — graphique FL Chart + infos complètes
-class StockDetailPage extends StatelessWidget {
+class StockDetailPage extends StatefulWidget {
   final String symbol;
 
   const StockDetailPage({super.key, required this.symbol});
+
+  @override
+  State<StockDetailPage> createState() => _StockDetailPageState();
+}
+
+class _StockDetailPageState extends State<StockDetailPage>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _flashController;
+
+  @override
+  void initState() {
+    super.initState();
+    _flashController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 3000),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _flashController.dispose();
+    super.dispose();
+  }
+
+  String get symbol => widget.symbol;
 
   @override
   Widget build(BuildContext context) {
@@ -184,59 +211,85 @@ class StockDetailPage extends StatelessWidget {
           ),
         ],
       ),
-      child: LineChart(
-        LineChartData(
-          gridData: FlGridData(
-            show: true,
-            drawVerticalLine: false,
-            horizontalInterval: _getInterval(data),
-            getDrawingHorizontalLine: (value) => FlLine(
-              color: AppColors.divider.withValues(alpha: 0.5),
-              strokeWidth: 1,
+      child: Stack(
+        children: [
+          // Flash animator overlay
+          Positioned.fill(
+            child: IgnorePointer(
+              child: AnimatedBuilder(
+                animation: _flashController,
+                builder: (context, _) {
+                  return CustomPaint(
+                    painter: _CurveFlashPainter(
+                      data: data,
+                      progress: _flashController.value,
+                      color: color,
+                      leftPadding: 50,
+                      topPadding: 0,
+                      bottomPadding: 0,
+                      rightPadding: 0,
+                    ),
+                  );
+                },
+              ),
             ),
           ),
-          titlesData: FlTitlesData(
-            show: true,
-            rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-            topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-            bottomTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-            leftTitles: AxisTitles(
-              sideTitles: SideTitles(
-                showTitles: true,
-                reservedSize: 50,
-                getTitlesWidget: (value, meta) => Text(
-                  value.toStringAsFixed(1),
-                  style: const TextStyle(color: AppColors.textSecondary, fontSize: 10),
+          // Main chart
+          LineChart(
+            LineChartData(
+              gridData: FlGridData(
+                show: true,
+                drawVerticalLine: false,
+                horizontalInterval: _getInterval(data),
+                getDrawingHorizontalLine: (value) => FlLine(
+                  color: AppColors.divider.withValues(alpha: 0.5),
+                  strokeWidth: 1,
+                ),
+              ),
+              titlesData: FlTitlesData(
+                show: true,
+                rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                bottomTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                leftTitles: AxisTitles(
+                  sideTitles: SideTitles(
+                    showTitles: true,
+                    reservedSize: 50,
+                    getTitlesWidget: (value, meta) => Text(
+                      value.toStringAsFixed(1),
+                      style: const TextStyle(color: AppColors.textSecondary, fontSize: 10),
+                    ),
+                  ),
+                ),
+              ),
+              borderData: FlBorderData(show: false),
+              lineBarsData: [
+                LineChartBarData(
+                  spots: data.asMap().entries.map((e) => FlSpot(e.key.toDouble(), e.value)).toList(),
+                  isCurved: true,
+                  color: color,
+                  barWidth: 2.5,
+                  isStrokeCapRound: true,
+                  dotData: const FlDotData(show: false),
+                  belowBarData: BarAreaData(
+                    show: true,
+                    color: color.withValues(alpha: 0.1),
+                  ),
+                ),
+              ],
+              lineTouchData: LineTouchData(
+                touchTooltipData: LineTouchTooltipData(
+                  getTooltipItems: (spots) {
+                    return spots.map((s) => LineTooltipItem(
+                      s.y.toStringAsFixed(2),
+                      TextStyle(color: color, fontWeight: FontWeight.w700),
+                    )).toList();
+                  },
                 ),
               ),
             ),
           ),
-          borderData: FlBorderData(show: false),
-          lineBarsData: [
-            LineChartBarData(
-              spots: data.asMap().entries.map((e) => FlSpot(e.key.toDouble(), e.value)).toList(),
-              isCurved: true,
-              color: color,
-              barWidth: 2.5,
-              isStrokeCapRound: true,
-              dotData: const FlDotData(show: false),
-              belowBarData: BarAreaData(
-                show: true,
-                color: color.withValues(alpha: 0.1),
-              ),
-            ),
-          ],
-          lineTouchData: LineTouchData(
-            touchTooltipData: LineTouchTooltipData(
-              getTooltipItems: (spots) {
-                return spots.map((s) => LineTooltipItem(
-                  s.y.toStringAsFixed(2),
-                  TextStyle(color: color, fontWeight: FontWeight.w700),
-                )).toList();
-              },
-            ),
-          ),
-        ),
+        ],
       ),
     );
   }
@@ -427,5 +480,194 @@ class StockDetailPage extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════
+// _CurveFlashPainter — Premium comet with trail & sparkles
+// ══════════════════════════════════════════════════════════════════
+class _CurveFlashPainter extends CustomPainter {
+  final List<double> data;
+  final double progress; // 0.0 → 1.0
+  final Color color;
+  final double leftPadding;
+  final double topPadding;
+  final double bottomPadding;
+  final double rightPadding;
+
+  _CurveFlashPainter({
+    required this.data,
+    required this.progress,
+    required this.color,
+    this.leftPadding = 50,
+    this.topPadding = 0,
+    this.bottomPadding = 0,
+    this.rightPadding = 0,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (data.length < 2) return;
+
+    final chartWidth = size.width - leftPadding - rightPadding;
+    final chartHeight = size.height - topPadding - bottomPadding;
+    if (chartWidth <= 0 || chartHeight <= 0) return;
+
+    final minY = data.reduce(math.min) * 0.998;
+    final maxY = data.reduce(math.max) * 1.002;
+    final rangeY = maxY - minY;
+    if (rangeY <= 0) return;
+
+    // Build points
+    final points = <Offset>[];
+    for (int i = 0; i < data.length; i++) {
+      final x = leftPadding + (i / (data.length - 1)) * chartWidth;
+      final y = topPadding + (1 - (data[i] - minY) / rangeY) * chartHeight;
+      points.add(Offset(x, y));
+    }
+
+    // Build smooth cubic bezier path
+    final path = Path();
+    path.moveTo(points.first.dx, points.first.dy);
+    for (int i = 0; i < points.length - 1; i++) {
+      final p0 = i > 0 ? points[i - 1] : points[i];
+      final p1 = points[i];
+      final p2 = points[i + 1];
+      final p3 = i + 2 < points.length ? points[i + 2] : points[i + 1];
+      const smoothness = 0.3;
+      final cp1x = p1.dx + (p2.dx - p0.dx) * smoothness;
+      final cp1y = p1.dy + (p2.dy - p0.dy) * smoothness;
+      final cp2x = p2.dx - (p3.dx - p1.dx) * smoothness;
+      final cp2y = p2.dy - (p3.dy - p1.dy) * smoothness;
+      path.cubicTo(cp1x, cp1y, cp2x, cp2y, p2.dx, p2.dy);
+    }
+
+    final pathMetrics = path.computeMetrics().toList();
+    if (pathMetrics.isEmpty) return;
+    final metric = pathMetrics.first;
+    final totalLen = metric.length;
+    final flashPos = progress * totalLen;
+
+    final tangent = metric.getTangentForOffset(flashPos);
+    if (tangent == null) return;
+    final fp = tangent.position;
+
+    // Breathing pulse
+    final pulse = 0.85 + 0.15 * math.sin(progress * math.pi * 12);
+
+    // ── 1) Long gradient trail (20%) ──
+    final trailLen = totalLen * 0.20;
+    final trailStart = (flashPos - trailLen).clamp(0.0, totalLen);
+    if (flashPos > trailStart) {
+      final trailPath = metric.extractPath(trailStart, flashPos);
+      // Wide soft trail
+      canvas.drawPath(
+        trailPath,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 8
+          ..strokeCap = StrokeCap.round
+          ..shader = ui.Gradient.linear(
+            fp,
+            Offset(
+              fp.dx - tangent.vector.dx * trailLen * 0.3,
+              fp.dy - tangent.vector.dy * trailLen * 0.3,
+            ),
+            [
+              color.withValues(alpha: 0.3 * pulse),
+              color.withValues(alpha: 0.0),
+            ],
+          )
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6),
+      );
+      // Thin bright core trail
+      canvas.drawPath(
+        trailPath,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 3
+          ..strokeCap = StrokeCap.round
+          ..shader = ui.Gradient.linear(
+            fp,
+            Offset(
+              fp.dx - tangent.vector.dx * trailLen * 0.3,
+              fp.dy - tangent.vector.dy * trailLen * 0.3,
+            ),
+            [
+              Colors.white.withValues(alpha: 0.6 * pulse),
+              color.withValues(alpha: 0.0),
+            ],
+          ),
+      );
+    }
+
+    // ── 2) Large outer halo ──
+    canvas.drawCircle(
+      fp,
+      32 * pulse,
+      Paint()
+        ..shader = ui.Gradient.radial(
+          fp,
+          32 * pulse,
+          [
+            color.withValues(alpha: 0.2 * pulse),
+            color.withValues(alpha: 0.05),
+            color.withValues(alpha: 0.0),
+          ],
+          [0.0, 0.5, 1.0],
+        ),
+    );
+
+    // ── 3) Medium glow ring ──
+    canvas.drawCircle(
+      fp,
+      14 * pulse,
+      Paint()
+        ..shader = ui.Gradient.radial(
+          fp,
+          14 * pulse,
+          [
+            color.withValues(alpha: 0.5 * pulse),
+            color.withValues(alpha: 0.15),
+            color.withValues(alpha: 0.0),
+          ],
+          [0.0, 0.5, 1.0],
+        ),
+    );
+
+    // ── 4) White hot center ──
+    canvas.drawCircle(
+      fp,
+      4.5 * pulse,
+      Paint()
+        ..color = Colors.white.withValues(alpha: 0.95)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2),
+    );
+    canvas.drawCircle(fp, 2.5, Paint()..color = Colors.white);
+
+    // ── 5) Sparkle particles ──
+    final rng = math.Random((progress * 10000).toInt());
+    for (int i = 0; i < 5; i++) {
+      final angle = rng.nextDouble() * math.pi * 2;
+      final dist = 8.0 + rng.nextDouble() * 16;
+      final sparkleAlpha = (0.3 + rng.nextDouble() * 0.4) * pulse;
+      final sparkleSize = 1.0 + rng.nextDouble() * 1.5;
+      final sp = Offset(
+        fp.dx + math.cos(angle) * dist,
+        fp.dy + math.sin(angle) * dist,
+      );
+      canvas.drawCircle(
+        sp,
+        sparkleSize,
+        Paint()
+          ..color = Colors.white.withValues(alpha: sparkleAlpha)
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 1),
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _CurveFlashPainter old) {
+    return old.progress != progress;
   }
 }

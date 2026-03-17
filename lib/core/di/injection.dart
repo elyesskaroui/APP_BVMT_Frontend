@@ -58,6 +58,13 @@ import '../../features/market_watch/domain/repositories/instrument_repository.da
 import '../../features/market_watch/domain/usecases/instrument_usecases.dart';
 import '../../features/market_watch/presentation/bloc/instrument_bloc.dart';
 
+// Market Watch — Historique
+import '../../features/market_watch/data/datasources/historique_mock_datasource.dart';
+import '../../features/market_watch/data/repositories/historique_repository_impl.dart';
+import '../../features/market_watch/domain/repositories/historique_repository.dart';
+import '../../features/market_watch/domain/usecases/historique_usecases.dart';
+import '../../features/market_watch/presentation/bloc/historique_bloc.dart';
+
 // Indices
 import '../../features/indices/data/datasources/indices_mock_datasource.dart';
 import '../../features/indices/data/repositories/indices_repository_impl.dart';
@@ -277,6 +284,30 @@ Future<void> initDependencies() async {
         getInstrumentsByMarket: sl(),
         searchInstruments: sl(),
         localStorage: sl<LocalStorageService>(),
+      ));
+
+  // ═══════════════════════════════════════════
+  // ── MARKET WATCH — HISTORIQUE ──
+  // ═══════════════════════════════════════════
+
+  // Data Sources
+  sl.registerLazySingleton(() => HistoriqueMockDataSource());
+
+  // Repositories
+  sl.registerLazySingleton<HistoriqueRepository>(
+    () => HistoriqueRepositoryImpl(dataSource: sl()),
+  );
+
+  // Use Cases
+  sl.registerFactory(() => GetHistoriqueSessions(sl()));
+  sl.registerFactory(() => GetHistoriqueChartData(sl()));
+  sl.registerFactory(() => GetSectorBreakdown(sl()));
+
+  // BLoC
+  sl.registerFactory(() => HistoriqueBloc(
+        getHistoriqueSessions: sl(),
+        getHistoriqueChartData: sl(),
+        getSectorBreakdown: sl(),
       ));
 
   // ═══════════════════════════════════════════
